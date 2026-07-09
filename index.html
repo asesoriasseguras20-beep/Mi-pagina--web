@@ -297,6 +297,16 @@
     form{ padding:26px; }
   }
 </style>
+
+  <!-- MailerLite Universal — Rastreo invisible -->
+  <script>
+    (function(w,d,e,u,f,l,n){w[f]=w[f]||function(){(w[f].q=w[f].q||[])
+    .push(arguments);},l=d.createElement(e),l.async=1,l.src=u,
+    n=d.getElementsByTagName(e)[0],n.parentNode.insertBefore(l,n);})
+    (window,document,'script','https://assets.mailerlite.com/js/universal.js','ml');
+    ml('account', '2490188');
+  </script>
+  <!-- End MailerLite Universal -->
 </head>
 <body>
 
@@ -520,8 +530,71 @@
 
   const form = document.getElementById('contactForm');
   const status = document.getElementById('formStatus');
-  form.addEventListener('submit', (e) => {
+
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
+
+    // Sanitización OWASP A03 — todos los inputs antes de procesar
+    const sanitize = (str) => String(str || '').trim().slice(0, 500)
+      .replace(/[<>"']/g, c => ({'<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#x27;'}[c]));
+
+    const nombre  = sanitize(document.getElementById('nombre').value);
+    const email   = sanitize(document.getElementById('email').value);
+    const telefono= sanitize(document.getElementById('telefono')?.value || '');
+    const mensaje = sanitize(document.getElementById('mensaje')?.value || '');
+
+    // Validación estricta email (OWASP A03)
+    const emailRegex = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/;
+    if (!nombre || !emailRegex.test(email)) {
+      status.textContent = '⚠️ Por favor completa nombre y correo válidos.';
+      status.style.color = '#D2382C';
+      status.classList.add('show');
+      setTimeout(() => status.classList.remove('show'), 5000);
+      return;
+    }
+
+    // Envío invisible a MailerLite via JS SDK (data-form="VXoEEC")
+    try {
+      if (window.ml) {
+        ml('webforms', 'VXoEEC', {
+          fields: {
+            name:  nombre,
+            email: email,
+            // Campos adicionales como propiedades personalizadas
+            telefono: telefono,
+            mensaje:  mensaje
+          }
+        });
+      }
+
+      // Fallback: fetch directo a la API de MailerLite (no-cors)
+      const mlData = {
+        email: email,
+        fields: {
+          name:     nombre,
+          last_name: '',
+          phone:    telefono
+        },
+        groups: ['VXoEEC'],
+        resubscribe: true,
+        autoresponders: true
+      };
+
+      fetch('https://connect.mailerlite.com/api/subscribers', {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mlData)
+      }).catch(() => {}); // silencioso — el SDK ya capturó el dato
+
+    } catch(err) {
+      // Sin bloqueo al usuario si MailerLite falla
+      console.warn('MailerLite:', err);
+    }
+
+    // Respuesta visual al usuario (igual que antes)
+    status.textContent = '✓ Mensaje enviado. Un asesor te contactará pronto.';
+    status.style.color = '';
     status.classList.add('show');
     form.reset();
     setTimeout(() => status.classList.remove('show'), 6000);
